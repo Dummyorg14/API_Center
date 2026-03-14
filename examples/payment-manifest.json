@@ -1,0 +1,16 @@
+{
+  "serviceId": "payment",
+  "serviceType": "shared",
+  "name": "Payment Gateway",
+  "baseUrl": "http://payment-service:4010",
+  "requiredScopes": ["payment:charge", "payment:refund"],
+  "exposes": ["/charge", "/refund", "/status", "/webhooks"],
+  "consumes": [],
+  "healthCheck": "/health",
+  "version": "1.0.0",
+  "description": "Platform-owned payment gateway service (Stripe, etc.)",
+  "ownerTeam": "platform-payments",
+  "contact": "#platform-payments-oncall",
+  "serviceTier": "critical",
+  "costCenter": "CC-PAY-001"
+}

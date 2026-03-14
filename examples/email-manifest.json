@@ -1,0 +1,16 @@
+{
+  "serviceId": "email",
+  "serviceType": "shared",
+  "name": "Email Service",
+  "baseUrl": "http://email-service:4012",
+  "requiredScopes": ["email:send", "email:templates"],
+  "exposes": ["/send", "/templates", "/status"],
+  "consumes": [],
+  "healthCheck": "/health",
+  "version": "1.0.0",
+  "description": "Platform-owned email delivery service (SendGrid, etc.)",
+  "ownerTeam": "platform-comms",
+  "contact": "#platform-comms-oncall",
+  "serviceTier": "standard",
+  "costCenter": "CC-COMMS-001"
+}

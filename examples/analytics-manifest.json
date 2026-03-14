@@ -1,0 +1,14 @@
+{
+  "$comment": "Example: Analytics Service registering with the API Center",
+
+  "serviceId": "analytics-service",
+  "name": "Analytics Service",
+  "baseUrl": "http://analytics-service:4005",
+  "requiredScopes": ["read:analytics", "write:reports"],
+  "exposes": ["/reports", "/dashboards", "/metrics"],
+  "consumes": ["campusone", "payment-service"],
+  "healthCheck": "/health",
+  "version": "1.3.0",
+  "description": "Provides analytics dashboards, reports, and metrics across the platform.",
+  "tags": ["analytics", "reporting"]
+}

@@ -1,0 +1,58 @@
+# =============================================================================
+# .dockerignore — Files excluded from the Docker build context
+# =============================================================================
+# WHY: When you run `docker build`, Docker sends ALL files in the current
+# directory to the Docker daemon as "build context." Without .dockerignore,
+# it would send node_modules (hundreds of MBs), .git history, secrets, etc.
+#
+# This file works exactly like .gitignore but for Docker builds.
+# It makes builds MUCH faster and prevents secrets from leaking into images.
+# =============================================================================
+
+# Dependencies (rebuilt inside the container)
+node_modules/
+
+# Build output (rebuilt inside the container)
+dist/
+
+# Git history (not needed in the image)
+.git/
+.gitignore
+
+# Environment files (NEVER bake secrets into Docker images!)
+.env
+.env.*
+!.env.example
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test & coverage
+tests/
+coverage/
+*.test.ts
+*.spec.ts
+
+# Documentation (not needed at runtime)
+README.md
+CONTRIBUTING.md
+LICENSE
+docs/
+
+# CI/CD config
+.github/
+
+# Docker files (prevent recursive builds)
+docker-compose.yml
+Dockerfile
+
+# Logs
+logs/
+*.log

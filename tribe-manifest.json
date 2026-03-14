@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Sample tribe-manifest.json — This is what a service sends to POST /api/v1/registry/register to join the platform.",
+
+  "serviceId": "campusone",
+  "name": "CampusOne",
+  "baseUrl": "http://campusone-service:4001",
+  "requiredScopes": ["read:users", "write:users", "read:courses", "write:enrolments"],
+  "exposes": ["/users", "/courses", "/enrolments"],
+  "consumes": ["analytics-service", "notification-service"],
+  "healthCheck": "/health",
+  "version": "2.1.0",
+  "description": "CampusOne is the core student management tribe — handles users, courses, and enrolments.",
+  "tags": ["core", "student-management"]
+}

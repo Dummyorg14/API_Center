@@ -1,0 +1,376 @@
+# =============================================================================
+# docker-compose.yml — APICenter Complete Infrastructure Stack
+# =============================================================================
+#
+# ARCHITECTURE DIAGRAM (checklist §1–§4, §8):
+#
+#   ┌──────────────────────────────────────────────────────────────────┐
+#   │  Consumer  (tribe SDK / browser / external client)               │
+#   └───────────────────────────┬──────────────────────────────────────┘
+#                               │ HTTP  :3000  ← ONE entrypoint
+#   ┌───────────────────────────▼──────────────────────────────────────┐
+#   │  NGINX  (load balancer)                                          │
+#   │  • Round-robin across 3 containers          (checklist §3)       │
+#   │  • Passive health checks — auto remove/re-add containers         │
+#   │  • CORS preflight answered at NGINX level                        │
+#   │  • Connection-level rate limiting before Node                    │
+#   └────────┬──────────────────┬──────────────────┬───────────────────┘
+#            │                  │                  │
+#   ┌────────▼──────┐  ┌────────▼──────┐  ┌────────▼──────┐
+#   │ api-center-1  │  │ api-center-2  │  │ api-center-3  │
+#   │ (this image)  │  │ (same image)  │  │ (same image)  │
+#   │  stateless    │  │  stateless    │  │  stateless    │
+#   └───────────────┘  └───────────────┘  └───────────────┘
+#        All 3 are IDENTICAL and INTERCHANGEABLE (checklist §2)
+#        Stopping any one does NOT interrupt traffic (checklist §8)
+#
+#   Shared infrastructure (all containers connect to the same instances):
+#   ┌─────────────────────────────────────────────────────────────────┐
+#   │  redis-cache      :6381  — service registry + token store       │
+#   │  redis-rate-limit :6380  — distributed rate-limit counters      │
+#   │  kafka            :9092  — event bus (audit, auth, registry)    │
+#   │  vault            :8200  — secrets + Transit signing (dev mode) │
+#   └─────────────────────────────────────────────────────────────────┘
+#
+#   Observability:
+#   ┌─────────────────────────────────────────────────────────────────┐
+#   │  prometheus   :9090  — metrics scraping                         │
+#   │  grafana      :3001  — dashboards                               │
+#   │  jaeger       :16686 — distributed tracing UI                   │
+#   │  kafka-ui     :8080  — browse topics / messages                 │
+#   └─────────────────────────────────────────────────────────────────┘
+#
+# HOW TO RUN:
+#   docker-compose up -d
+#
+# HOW TO ADD A 4th CONTAINER (checklist §8 — horizontal scaling):
+#   1. Add to this file (copy api-center-3 block, rename to api-center-4)
+#   2. Add  server api-center-4:3000 max_fails=3 fail_timeout=20s;
+#      to the upstream block in nginx.conf
+#   3. docker-compose up -d api-center-4 && docker-compose restart nginx
+#
+# TRIBE SDK (checklist §5, §6, §7):
+#   Tribes interact with this stack via the shared SDK only.
+#   See src/sdk/TribeClient.ts and @apicenter/sdk package.
+#   SDK gateway URL in development: http://localhost:3000
+# =============================================================================
+
+version: '3.8'
+
+# =============================================================================
+# Shared anchor for all 3 identical gateway containers (checklist §2)
+# Every change here is automatically applied to all 3 containers.
+# =============================================================================
+x-api-center-common: &api-center-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - .env
+  environment:
+    # All 3 containers get the same env — stateless by design
+    GATEWAY_ROLE: apicenter-gateway
+    # Redis URLs point to container names (Docker internal network)
+    REDIS_CACHE_URL:      redis://redis-cache:6379
+    REDIS_RATE_LIMIT_URL: redis://redis-rate-limit:6379
+    # Kafka internal address
+    KAFKA_BROKERS: kafka:29092
+    # Vault dev server — replace with AppRole credentials in production
+    VAULT_ADDR:     http://vault:8200
+    VAULT_TOKEN:    root
+    VAULT_DEV_MODE: "true"
+  depends_on:
+    kafka:
+      condition: service_healthy
+    redis-cache:
+      condition: service_healthy
+    redis-rate-limit:
+      condition: service_healthy
+    vault:
+      condition: service_healthy
+  healthcheck:
+    # NGINX passive health check reads this endpoint to decide rotation status
+    test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider",
+           "http://localhost:3000/api/v1/health/live"]
+    interval: 15s
+    timeout:  5s
+    retries:  3
+    start_period: 30s
+  restart: unless-stopped
+  networks:
+    - api-center-network
+
+# =============================================================================
+services:
+
+  # ---------------------------------------------------------------------------
+  # NGINX — Single entrypoint + round-robin load balancer  (checklist §3)
+  # ---------------------------------------------------------------------------
+  # ALL consumer traffic enters here first.
+  # NGINX is responsible for:
+  #   • Distributing traffic round-robin across the 3 gateway containers
+  #   • Removing unhealthy containers from rotation (passive health checks)
+  #   • Re-adding recovered containers automatically (fail_timeout)
+  #   • Answering CORS preflight (OPTIONS) without hitting Node
+  #   • Connection-level rate limiting
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nginx-lb
+    ports:
+      - "3000:80"      # ← THE ONE entrypoint. Tribes/browsers use this port.
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api-center-1:
+        condition: service_healthy
+      api-center-2:
+        condition: service_healthy
+      api-center-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider",
+             "http://127.0.0.1:80/nginx-health"]
+      interval: 10s
+      timeout:  5s
+      retries:  3
+    restart: unless-stopped
+    networks:
+      - api-center-network
+
+  # ---------------------------------------------------------------------------
+  # APICenter Gateway — Container 1  (checklist §2)
+  # ---------------------------------------------------------------------------
+  # Identical to containers 2 and 3. Runs the same image.
+  # Stopping this container does NOT interrupt traffic —
+  # NGINX will route to containers 2 and 3 automatically.
+  # ---------------------------------------------------------------------------
+  api-center-1:
+    <<: *api-center-common
+    container_name: api-center-1
+
+  # ---------------------------------------------------------------------------
+  # APICenter Gateway — Container 2  (checklist §2)
+  # ---------------------------------------------------------------------------
+  api-center-2:
+    <<: *api-center-common
+    container_name: api-center-2
+
+  # ---------------------------------------------------------------------------
+  # APICenter Gateway — Container 3  (checklist §2)
+  # ---------------------------------------------------------------------------
+  api-center-3:
+    <<: *api-center-common
+    container_name: api-center-3
+
+  # ---------------------------------------------------------------------------
+  # Redis — Service Registry + Token Store  (stateless guarantee, checklist §1)
+  # ---------------------------------------------------------------------------
+  # Shared by all 3 gateway containers.
+  # Stores:
+  #   • Service registry entries  →  api-center:registry:services (hash)
+  #   • Refresh tokens            →  refresh:{jti}  (string + TTL)
+  #   • Session token indexes     →  session:{sub}  (set)
+  # Persistence: RDB snapshot every 60 s if ≥1 write — registry survives restarts.
+  # ---------------------------------------------------------------------------
+  redis-cache:
+    image: redis:7-alpine
+    container_name: redis-cache
+    ports:
+      - "6381:6379"
+    command: >
+      redis-server
+        --save 60 1
+        --loglevel warning
+        --maxmemory 256mb
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout:  5s
+      retries:  3
+    volumes:
+      - redis-cache-data:/data
+    networks:
+      - api-center-network
+
+  # ---------------------------------------------------------------------------
+  # Redis — Rate-limit counters  (distributed throttling, checklist §8)
+  # ---------------------------------------------------------------------------
+  # Separate instance: a rate-limit storm cannot evict registry/token entries.
+  # LRU eviction is safe here — counters are ephemeral and will self-reset.
+  # ---------------------------------------------------------------------------
+  redis-rate-limit:
+    image: redis:7-alpine
+    container_name: redis-rate-limit
+    ports:
+      - "6380:6379"
+    command: >
+      redis-server
+        --loglevel warning
+        --maxmemory 128mb
+        --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout:  5s
+      retries:  3
+    networks:
+      - api-center-network
+
+  # ---------------------------------------------------------------------------
+  # Kafka (KRaft — no Zookeeper)  — Event bus
+  # ---------------------------------------------------------------------------
+  # Topics produced by APICenter:
+  #   api-center.audit.log             every proxied request
+  #   api-center.auth.token-issued     M2M token issued
+  #   api-center.auth.token-refreshed  token refreshed
+  #   api-center.auth.token-revoked    token revoked
+  #   api-center.registry.*            service lifecycle events
+  #   api-center.gateway.*             circuit-breaker state changes
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS:              PLAINTEXT://kafka:29092,CONTROLLER://kafka:9093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS:   PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout:  20s
+      retries:  10
+      start_period: 60s
+    networks:
+      - api-center-network
+
+  # ---------------------------------------------------------------------------
+  # Vault — Secrets + Transit signing (dev mode for local development)
+  # ---------------------------------------------------------------------------
+  # In production: use a properly unsealed HA Vault cluster with AppRole auth.
+  # Dev root token: root   |   UI: http://localhost:8200/ui
+  # ---------------------------------------------------------------------------
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID:  root
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      VAULT_LOG_LEVEL: warn
+    cap_add:
+      - IPC_LOCK
+    command: vault server -dev
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 10s
+      timeout:  5s
+      retries:  3
+      start_period: 5s
+    networks:
+      - api-center-network
+
+  # ---------------------------------------------------------------------------
+  # Kafka UI — Browse topics / messages
+  # ---------------------------------------------------------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: api-center-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      - kafka
+    networks:
+      - api-center-network
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — Metrics scraping  (checklist §8 — "ready for future monitoring")
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    depends_on:
+      nginx:
+        condition: service_healthy
+    networks:
+      - api-center-network
+
+  # ---------------------------------------------------------------------------
+  # Grafana — Dashboards
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER:     admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SERVER_ROOT_URL: http://localhost:3001
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - api-center-network
+
+  # ---------------------------------------------------------------------------
+  # Jaeger — Distributed tracing
+  # ---------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "14268:14268"   # HTTP collector
+      - "4318:4318"     # OTLP HTTP
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - api-center-network
+
+# =============================================================================
+networks:
+  api-center-network:
+    driver: bridge
+    # All containers on this internal network.
+    # Only the following ports are exposed to the host:
+    #   :3000  NGINX (consumer entrypoint)
+    #   :8080  Kafka UI
+    #   :8200  Vault UI (dev)
+    #   :9090  Prometheus
+    #   :3001  Grafana
+    #   :16686 Jaeger
+
+volumes:
+  redis-cache-data:   # Service registry persists across container restarts
+  prometheus-data:
+  grafana-data:
+    driver: local

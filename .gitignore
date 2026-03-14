@@ -1,0 +1,37 @@
+# =============================================================================
+# .gitignore — API Center
+# =============================================================================
+
+# ---- Dependencies ----
+node_modules/
+
+# ---- Build output ----
+dist/
+
+# ---- Environment variables (never commit secrets) ----
+.env
+.env.local
+.env.*.local
+
+# ---- Logs ----
+logs/
+*.log
+npm-debug.log*
+
+# ---- OS files ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- IDE / Editor ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Test coverage ----
+coverage/
+
+# ---- Docker (local volumes) ----
+docker-data/
