@@ -1,0 +1,11 @@
+{
+  "serviceId": "logistics-service",
+  "name": "Logistics Service",
+  "baseUrl": "http://logistics-service.local:4000",
+  "requiredScopes": ["logistics:read"],
+  "exposes": ["GET /shipments/:id"],
+  "consumes": [],
+  "healthCheck": "/health",
+  "version": "1.0.0",
+  "serviceType": "tribe"
+}
