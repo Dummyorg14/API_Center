@@ -5,8 +5,8 @@ This runbook validates the local Front Door pattern using dev-jwt only.
 ## 1) Build and start all containers
 
 ```powershell
-docker-compose down --remove-orphans
-docker-compose up -d --build
+docker compose down --remove-orphans
+docker compose up -d --build
 ```
 
 ## 2) Register the mock services in the gateway registry

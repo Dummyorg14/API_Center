@@ -2,11 +2,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy root-level package files first (for monorepo structure)
+COPY logistics-service/package*.json ./
 RUN npm install
 
-COPY tsconfig.json ./
-COPY src ./src
+# Copy tsconfig and source
+COPY logistics-service/tsconfig.json ./
+COPY logistics-service/src ./src
 
 EXPOSE 4000
 CMD ["npm", "run", "start"]

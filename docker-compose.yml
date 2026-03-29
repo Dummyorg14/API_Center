@@ -55,7 +55,7 @@
 #   SDK gateway URL in development: http://localhost:3000
 # =============================================================================
 
-version: '3.8'
+# Note: The `version` attribute is obsolete in modern Docker Compose and has been removed.
 
 # =============================================================================
 # Shared anchor for all 3 identical gateway containers (checklist §2)
@@ -176,8 +176,8 @@ services:
   # ---------------------------------------------------------------------------
   logistics-service:
     build:
-      context: ./examples/sandbox/logistics-service
-      dockerfile: Dockerfile
+      context: ./examples/sandbox
+      dockerfile: logistics-service/Dockerfile
     container_name: logistics-service
     environment:
       PORT: "4000"
