@@ -32,6 +32,7 @@ APICenter is the **single, centralized API gateway** for the platform. Every API
    - [Observability Stack](#observability-stack)
 10. [Environment Variables Reference](#environment-variables-reference)
 11. [Production Hardening Checklist](#production-hardening-checklist)
+12. [GCP Deployment — Cloud Run + Secret Manager + Cloud Build](#gcp-deployment--cloud-run--secret-manager--cloud-build)
 
 ---
 
@@ -956,3 +957,287 @@ npm run vault:init
 ```
 
 Enables the KV v2 and Transit secrets engines and creates a signing key.
+
+---
+
+## GCP Deployment — Cloud Run + Secret Manager + Cloud Build
+
+This section covers a complete, production-ready deployment of APICenter on Google Cloud Platform using **Cloud Run** (serverless containers), **Secret Manager** (runtime secrets), and **Cloud Build** (CI/CD). All steps below assume you have the [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install) installed and authenticated.
+
+---
+
+### One-time Setup
+
+#### 1. Create (or select) a GCP project
+
+```bash
+# Create a new project
+gcloud projects create MY_PROJECT_ID --name="APICenter"
+gcloud config set project MY_PROJECT_ID
+
+# Enable billing (required for Cloud Run, Artifact Registry, etc.)
+# https://console.cloud.google.com/billing
+```
+
+#### 2. Enable required APIs
+
+```bash
+gcloud services enable \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  secretmanager.googleapis.com \
+  artifactregistry.googleapis.com \
+  iam.googleapis.com
+```
+
+#### 3. Create an Artifact Registry repository
+
+```bash
+gcloud artifacts repositories create api-center \
+  --repository-format=docker \
+  --location=us-central1 \
+  --description="APICenter container images"
+```
+
+#### 4. Create a dedicated Cloud Run service account
+
+```bash
+gcloud iam service-accounts create api-center-cloudrun \
+  --display-name="APICenter Cloud Run SA"
+
+export SA_EMAIL="api-center-cloudrun@MY_PROJECT_ID.iam.gserviceaccount.com"
+```
+
+#### 5. Grant required IAM roles
+
+| Role | Purpose |
+|------|---------|
+| `roles/secretmanager.secretAccessor` | Read secrets at runtime |
+| `roles/run.invoker` | Allow authenticated callers (if not public) |
+
+```bash
+# Allow the Cloud Run SA to read secrets
+gcloud projects add-iam-policy-binding MY_PROJECT_ID \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/secretmanager.secretAccessor"
+
+# Grant the Cloud Build SA permission to deploy to Cloud Run and act as the Cloud Run SA
+export BUILD_SA="$(gcloud projects describe MY_PROJECT_ID \
+  --format='value(projectNumber)')@cloudbuild.gserviceaccount.com"
+
+gcloud projects add-iam-policy-binding MY_PROJECT_ID \
+  --member="serviceAccount:${BUILD_SA}" \
+  --role="roles/run.admin"
+
+gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
+  --member="serviceAccount:${BUILD_SA}" \
+  --role="roles/iam.serviceAccountUser"
+
+gcloud projects add-iam-policy-binding MY_PROJECT_ID \
+  --member="serviceAccount:${BUILD_SA}" \
+  --role="roles/artifactregistry.writer"
+```
+
+#### 6. Create the application secret in Secret Manager
+
+The secret must be a JSON object whose keys map to environment variable names.
+
+```bash
+# Create the secret (initially empty)
+gcloud secrets create api-center-prod \
+  --replication-policy=automatic
+
+# Add the first version — create a JSON file with your env vars:
+cat > /tmp/api-center-secrets.json <<'EOF'
+{
+  "PLATFORM_ADMIN_SECRET": "change-me-generate-with-openssl-rand-hex-32",
+  "JWT_PRIVATE_KEY": "-----BEGIN RSA PRIVATE KEY-----\n...",
+  "JWT_PUBLIC_KEY": "-----BEGIN PUBLIC KEY-----\n...",
+  "REDIS_CACHE_URL": "redis://10.x.x.x:6379",
+  "REDIS_RATE_LIMIT_URL": "redis://10.x.x.x:6380",
+  "KAFKA_BROKERS": "broker1:9092,broker2:9092",
+  "TRIBE_SECRET_USER_SERVICE": "<sha256hash>",
+  "TRIBE_SECRET_PAYMENT_SERVICE": "<sha256hash>"
+}
+EOF
+
+gcloud secrets versions add api-center-prod \
+  --data-file=/tmp/api-center-secrets.json
+
+# Remove the temp file immediately
+rm /tmp/api-center-secrets.json
+```
+
+> **Note:** Any key present in the JSON secret will be merged into `process.env` at startup. Keys already set as Cloud Run env vars take precedence (they are not overridden).
+
+#### 7. Grant the Cloud Run SA access to the specific secret
+
+```bash
+gcloud secrets add-iam-policy-binding api-center-prod \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+---
+
+### CI/CD Flow (Cloud Build)
+
+The `cloudbuild.yaml` at the repository root defines the pipeline:
+
+1. **`test`** — Install deps, lint, run unit tests
+2. **`build`** — Build the Docker image from `docker/Dockerfile.gcp`
+3. **`push`** — Push the image to Artifact Registry (tagged with `SHORT_SHA` and `latest`)
+4. **`deploy`** — Deploy the new image to Cloud Run
+
+#### Create a Cloud Build trigger
+
+```bash
+# Via gcloud (adjust --repo-name and --branch-pattern as needed)
+gcloud builds triggers create github \
+  --repo-name=API_Center \
+  --repo-owner=YOUR_GITHUB_ORG \
+  --branch-pattern="^main$" \
+  --build-config=cloudbuild.yaml \
+  --substitutions=\
+_REGION=us-central1,\
+_SERVICE_NAME=api-center,\
+_GCP_PROJECT_ID=MY_PROJECT_ID,\
+_IMAGE_REPO=us-central1-docker.pkg.dev/MY_PROJECT_ID/api-center
+```
+
+Or configure the trigger in [Cloud Build → Triggers](https://console.cloud.google.com/cloud-build/triggers) in the console, setting the same substitutions.
+
+---
+
+### Manual Cloud Run Deploy
+
+To deploy without Cloud Build (e.g. from your local machine):
+
+```bash
+# Authenticate Docker with Artifact Registry
+gcloud auth configure-docker us-central1-docker.pkg.dev
+
+# Build and push
+docker build -f docker/Dockerfile.gcp \
+  -t us-central1-docker.pkg.dev/MY_PROJECT_ID/api-center/api-center:latest .
+docker push us-central1-docker.pkg.dev/MY_PROJECT_ID/api-center/api-center:latest
+
+# Deploy
+gcloud run deploy api-center \
+  --image=us-central1-docker.pkg.dev/MY_PROJECT_ID/api-center/api-center:latest \
+  --region=us-central1 \
+  --platform=managed \
+  --service-account="${SA_EMAIL}" \
+  --set-env-vars=NODE_ENV=production \
+  --set-env-vars=GCP_PROJECT_ID=MY_PROJECT_ID \
+  --set-env-vars=GCP_SECRET_NAME=api-center-prod \
+  --allow-unauthenticated
+```
+
+Or use the declarative YAML definition:
+
+```bash
+# Fill in placeholders in gcp/cloudrun.yaml first, then:
+gcloud run services replace gcp/cloudrun.yaml --region=us-central1
+```
+
+---
+
+### Environment Variable Setup
+
+Set non-sensitive env vars directly on the Cloud Run service. Sensitive values go into Secret Manager (see above).
+
+| Variable | Where to set |
+|----------|-------------|
+| `NODE_ENV=production` | Cloud Run env var |
+| `GCP_PROJECT_ID` | Cloud Run env var |
+| `GCP_SECRET_NAME` | Cloud Run env var |
+| `AUTH_PROVIDER` | Cloud Run env var |
+| `PLATFORM_ADMIN_SECRET` | Secret Manager JSON |
+| `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | Secret Manager JSON |
+| `REDIS_CACHE_URL` | Secret Manager JSON |
+| `KAFKA_BROKERS` | Secret Manager JSON |
+| `TRIBE_SECRET_*` | Secret Manager JSON |
+
+```bash
+# Update Cloud Run env vars without redeploying the image
+gcloud run services update api-center \
+  --region=us-central1 \
+  --set-env-vars=AUTH_PROVIDER=google,GOOGLE_ALLOWED_DOMAINS=yourcompany.com
+```
+
+---
+
+### Adding Per-Service Secrets
+
+To add or update a tribe secret without modifying other secrets:
+
+1. Download the current secret version:
+   ```bash
+   gcloud secrets versions access latest \
+     --secret=api-center-prod > /tmp/current.json
+   ```
+
+2. Edit `/tmp/current.json` — add or update the `TRIBE_SECRET_<NAME>` key.
+
+3. Push as a new version:
+   ```bash
+   gcloud secrets versions add api-center-prod \
+     --data-file=/tmp/current.json
+   rm /tmp/current.json
+   ```
+
+4. The next container startup (or redeployment) will pick up the new version automatically. To force a reload without a new image:
+   ```bash
+   gcloud run services update api-center \
+     --region=us-central1 \
+     --set-env-vars=_FORCE_REDEPLOY="$(date +%s)"
+   ```
+
+---
+
+### Secret Rotation
+
+1. Create a new version of the secret (the old version remains accessible until you disable/destroy it):
+   ```bash
+   gcloud secrets versions add api-center-prod \
+     --data-file=/tmp/new-secrets.json
+   ```
+
+2. Redeploy or restart the Cloud Run service so containers pick up `latest`:
+   ```bash
+   gcloud run services update api-center \
+     --region=us-central1 \
+     --image=us-central1-docker.pkg.dev/MY_PROJECT_ID/api-center/api-center:latest
+   ```
+
+3. After confirming the new version works, disable the old version:
+   ```bash
+   gcloud secrets versions disable OLD_VERSION_NUMBER \
+     --secret=api-center-prod
+   ```
+
+4. To pin a specific version instead of always using `latest`, set `GCP_SECRET_VERSION=<version_number>` as a Cloud Run env var.
+
+---
+
+### Local Dev Notes
+
+- Do **not** set `GCP_SECRET_NAME` in your local `.env` — leave it blank to use `process.env` directly (populated from `.env` via dotenv).
+- To test Secret Manager locally, set `GCP_SECRET_NAME`, `GCP_PROJECT_ID`, and authenticate with:
+  ```bash
+  gcloud auth application-default login
+  ```
+  The GCP client library picks up Application Default Credentials automatically.
+- The `docker/Dockerfile.gcp` image exposes port `8080` (Cloud Run default). The root `Dockerfile` and `docker-compose.yml` still use port `3000` for local development — nothing changes for local dev.
+
+---
+
+### Required IAM Roles — Summary
+
+| Principal | Role | Purpose |
+|-----------|------|---------|
+| Cloud Run SA | `roles/secretmanager.secretAccessor` | Read secrets at runtime |
+| Cloud Build SA | `roles/run.admin` | Deploy Cloud Run services |
+| Cloud Build SA | `roles/iam.serviceAccountUser` | Act as Cloud Run SA during deploy |
+| Cloud Build SA | `roles/artifactregistry.writer` | Push Docker images |
