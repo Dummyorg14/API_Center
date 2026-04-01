@@ -371,4 +371,3 @@ To add a new external API, create a handler in `src/external/apis/` following th
 
 ---
 
-> **Developers and operators** — for local dev setup, full test suite, environment variable reference, production hardening, and GCP deployment instructions, see [docs/developer/README.md](docs/developer/README.md).
