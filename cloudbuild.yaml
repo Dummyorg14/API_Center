@@ -1,0 +1,92 @@
+# =============================================================================
+# cloudbuild.yaml — Cloud Build CI/CD pipeline for APICenter
+# =============================================================================
+#
+# TRIGGERS (configure in Cloud Build console or via gcloud):
+#   Push to main  → build, push, deploy to Cloud Run
+#   Push to PR    → build + test only (no deploy)
+#
+# SUBSTITUTIONS (set in trigger or --substitutions flag):
+#   _REGION          GCP region for Cloud Run          (e.g. us-central1)
+#   _SERVICE_NAME    Cloud Run service name             (default: api-center)
+#   _GCP_PROJECT_ID  Project ID (defaults to $PROJECT_ID set by Cloud Build)
+#   _IMAGE_REPO      Artifact Registry repo path
+#                    (e.g. us-central1-docker.pkg.dev/$PROJECT_ID/api-center)
+#
+# REQUIRED IAM on the Cloud Build service account:
+#   roles/run.admin
+#   roles/iam.serviceAccountUser          (to act as the Cloud Run SA)
+#   roles/artifactregistry.writer
+#   roles/secretmanager.secretAccessor    (if reading secrets during build)
+# =============================================================================
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE_NAME: api-center
+  _GCP_PROJECT_ID: ${PROJECT_ID}
+  _IMAGE_REPO: us-central1-docker.pkg.dev/${PROJECT_ID}/api-center
+
+steps:
+  # ---------------------------------------------------------------------------
+  # 1. Install dependencies and run tests
+  # ---------------------------------------------------------------------------
+  - name: node:20-alpine
+    id: test
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        npm ci
+        npm run lint
+        npm test
+
+  # ---------------------------------------------------------------------------
+  # 2. Build the production Docker image
+  # ---------------------------------------------------------------------------
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - -t
+      - ${_IMAGE_REPO}/${_SERVICE_NAME}:${SHORT_SHA}
+      - -t
+      - ${_IMAGE_REPO}/${_SERVICE_NAME}:latest
+      - -f
+      - docker/Dockerfile.gcp
+      - .
+    waitFor: [test]
+
+  # ---------------------------------------------------------------------------
+  # 3. Push image to Artifact Registry
+  # ---------------------------------------------------------------------------
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args:
+      - push
+      - --all-tags
+      - ${_IMAGE_REPO}/${_SERVICE_NAME}
+    waitFor: [build]
+
+  # ---------------------------------------------------------------------------
+  # 4. Deploy to Cloud Run
+  # ---------------------------------------------------------------------------
+  - name: gcr.io/cloud-builders/gcloud
+    id: deploy
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --image=${_IMAGE_REPO}/${_SERVICE_NAME}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --set-env-vars=NODE_ENV=production
+      - --set-env-vars=GCP_PROJECT_ID=${_GCP_PROJECT_ID}
+    waitFor: [push]
+
+images:
+  - ${_IMAGE_REPO}/${_SERVICE_NAME}:${SHORT_SHA}
+  - ${_IMAGE_REPO}/${_SERVICE_NAME}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

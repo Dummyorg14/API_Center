@@ -2,8 +2,8 @@
 // src/config/config.module.ts — Configuration module
 // =============================================================================
 // Provides the ConfigService and SecretsService as global singletons.
-// SecretsService runs first (OnModuleInit) to load AWS secrets into process.env
-// before ConfigService reads them.
+// SecretsService runs first (OnModuleInit) to load GCP Secret Manager secrets
+// into process.env before ConfigService reads them.
 // =============================================================================
 
 import { Global, Module } from '@nestjs/common';
