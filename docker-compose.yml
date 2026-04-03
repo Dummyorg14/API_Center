@@ -55,7 +55,7 @@
 #   SDK gateway URL in development: http://localhost:3000
 # =============================================================================
 
-version: '3.8'
+# Note: The `version` attribute is obsolete in modern Docker Compose and has been removed.
 
 # =============================================================================
 # Shared anchor for all 3 identical gateway containers (checklist §2)
@@ -79,6 +79,14 @@ x-api-center-common: &api-center-common
     VAULT_ADDR:     http://vault:8200
     VAULT_TOKEN:    root
     VAULT_DEV_MODE: "true"
+    JWT_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCt/GN+/VLRjIrH\nQjZpAUnW145RQHo889dcXiBuUYIVkeJdeVL/nJbz7qvW0gP5S7k5+F064pYlMuVh\ndGJey6QkHX8F2PXKUiJHUWa+cptBRTEWZ2k/D7BVJyiLIQ3x0omlDe935fhXhyEc\n1DnP25dtgXYoBd0LMHZkzh1ZpvIbjy3Hp5z8jMhWKJmhA7xMNYOeXxu6VnsB3wn2\nr4GeU2bvQZyyMkkBWbF8tGDwdQVL54GoJ8lsXek4X0YhAHDZzN5CecJ6lTozt7rL\nVJas4GqpZWukBwx5CHO9KDpr8o+bz6f5X5FIQoU6D/19q9ImM37DVMBYQ3GGZV2F\nXyg8n+0xAgMBAAECggEAB89SEMiqpZoAPoOnDTl75NlEE9r/5bGpJZX60RLm8sSL\nt4gPOQbAmqpoc6YVnDSZR9wxhKe4R0sQo3pRwlk0KPQbQCIiHdroG6EQemzq8dAL\nHRsnHPfdgaQGaJDjNys9ByAAE2bq+fRYkNqIrg84jdeDbBZfys1aCio7pGsnV+Pn\nYYf8DxkctN9nXfSvWua/yAogdNeWs0H0tqXQrh8RBn7JMjni8qjxsvJKSMk7CA00\nXcP7dY6QNrpt96/ERJ0SjyrOd7vGBRgd0A7kC+9mLp0j2TYSe7GoHwoUo7G4Mory\ntmIqH+wlZpNuRhl8jMN+bGyMPMd0BpYT+rjhNgrygQKBgQDjUJumdelV2CSsB9PQ\nOh4wDZWF97k2aryhsWc119gZuKrGjcOrkRZ0BeBZCfO3l4wCyP8C0p1PRTXp5nAR\nCqmX3u4U5XWfMdbHpkSKe91vxrDJpF9g5p9rl44nXhIaRSizJSQu3gv3WYpKMfAm\n1V9sgnnspDgkIYt5p4WM9KhVgQKBgQDD8P3NpsL3RYYH95b7iV8sd8sMY5xHohdG\ny+mdmNmnBkxJQ80s8Xtw3BVx/Sl0iPDEDPvSFuRs02RM0kPX08OH+2HPIvabeyyj\nnS1+w7kjRezbchFJP1jmaLtkt0rHzQVc7pELkjEsnfMM1SIYsMKQUlDfm42HujLx\n9Ef3UtpPsQKBgEHdAEx6C7LI3s9NsUy7GjYYKYPYpDylLqS3D02ljcLeI/VF7DUQ\n4+2YKkoCPTCr43CHJoR93AC08Asmrr/xU/RiLp+1YKBQw4ezoFZzz1RswJqcWtpr\n2DNHhXPYqOwdr85Aa7x8sADqW8xlrczCtFRvdb5gUrf9VDlalbKizQeBAoGAWlPK\nbPengV5nf1zAGY0mdtVyoW96J/utR1HRjHlePQVGPbAn8cQQ5+JNcJMIfVRzya1C\nmYM8In8BCfkUlXZl+VYFrPutO9f4qCRZSMrpmj0uB6v6FA5D6VP2r2Nf8eOtyT2h\nV/g4+xyFYzEN2twBlY6dAbgv8pX/zlKSqo1jXsECgYB6qTXT/d+PZnmhM/bfdhXZ\nwCE0fxE2Cc181b8VWh++qfPpjQ1SsBhWiOE2x0/ZBTKkjulNDG4kwKMMzbPmN+XI\n8p0ISI/vPgePM3Y8bU3ypLN87Y4h4b3VqCeGtJCxQCED0jZZi3kx5XX8YaDX1Nuo\n5lescS08FtvQYzpmcmFqyA==\n-----END PRIVATE KEY-----\n"
+    JWT_PUBLIC_KEY: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArfxjfv1S0YyKx0I2aQFJ\n1teOUUB6PPPXXF4gblGCFZHiXXlS/5yW8+6r1tID+Uu5OfhdOuKWJTLlYXRiXsuk\nJB1/Bdj1ylIiR1FmvnKbQUUxFmdpPw+wVScoiyEN8dKJpQ3vd+X4V4chHNQ5z9uX\nbYF2KAXdCzB2ZM4dWabyG48tx6ec/IzIViiZoQO8TDWDnl8bulZ7Ad8J9q+BnlNm\n70GcsjJJAVmxfLRg8HUFS+eBqCfJbF3pOF9GIQBw2czeQnnCepU6M7e6y1SWrOBq\nqWVrpAcMeQhzvSg6a/KPm8+n+V+RSEKFOg/9favSJjN+w1TAWENxhmVdhV8oPJ/t\nMQIDAQAB\n-----END PUBLIC KEY-----\n"
+    # Sandbox tribe credentials (sha256 hashes of plain secrets)
+    TRIBE_SECRET_DEMAND_SERVICE: e99f6fea0e844a542cdb95958b3fc4873ada91a767110c4326548b86ec06ba62
+    TRIBE_SECRET_LOGISTICS_SERVICE: 13de2a19b4db8307fe57172f188ca0fcfd5793fda98dbc2b84447510ba9b138a
+    # Use .env RATE_LIMIT_MAX (default 100) so round-robin tests are not
+    # artificially throttled by a hard-coded sandbox override.
+    RATE_LIMIT_MAX: "${RATE_LIMIT_MAX:-100}"
   depends_on:
     kafka:
       condition: service_healthy
@@ -162,6 +170,65 @@ services:
   api-center-3:
     <<: *api-center-common
     container_name: api-center-3
+
+  # ---------------------------------------------------------------------------
+  # Logistics-Service (mock upstream) — JWT-protected NestJS service
+  # ---------------------------------------------------------------------------
+  logistics-service:
+    build:
+      context: ./examples/sandbox
+      dockerfile: logistics-service/Dockerfile
+    container_name: logistics-service
+    environment:
+      PORT: "4000"
+      JWKS_URL: http://nginx/api/v1/auth/.well-known/jwks.json
+      JWT_ISSUER: api-center-dev
+    expose:
+      - "4000"
+    depends_on:
+      nginx:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      api-center-network:
+        aliases:
+          - logistics-service.local
+
+  # ---------------------------------------------------------------------------
+  # Demand-Service (mock consumer) — uses @apicenter/sdk via gateway front door
+  # ---------------------------------------------------------------------------
+  demand-service:
+    build:
+      context: ./examples/sandbox
+      dockerfile: demand-service/Dockerfile
+    container_name: demand-service
+    environment:
+      PORT: "4100"
+      APICENTER_URL: http://nginx
+      DEMAND_TRIBE_ID: demand-service
+      DEMAND_TRIBE_SECRET: demand-secret
+    ports:
+      - "4100:4100"
+    depends_on:
+      nginx:
+        condition: service_healthy
+      logistics-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4100/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      api-center-network:
+        aliases:
+          - demand-service.local
 
   # ---------------------------------------------------------------------------
   # Redis — Service Registry + Token Store  (stateless guarantee, checklist §1)

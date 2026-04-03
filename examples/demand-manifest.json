@@ -1,0 +1,11 @@
+{
+  "serviceId": "demand-service",
+  "name": "Demand Service",
+  "baseUrl": "http://demand-service.local:4100",
+  "requiredScopes": ["demand:read"],
+  "exposes": ["GET /demand/:id"],
+  "consumes": ["logistics-service"],
+  "healthCheck": "/health",
+  "version": "1.0.0",
+  "serviceType": "tribe"
+}
